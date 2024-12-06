@@ -1,9 +1,8 @@
-from game import Game
-from player import Player
+from game import Game, Player
 import argparse
 
 def main(args):
-    playerA = Player("Player A", color = "red", ishuman = True) # both players are human
+    playerA = Player("Player A", color = "red", ishuman = True)
     playerB = Player("Player B", color = "blue", ishuman = True) 
     game = Game([playerA, playerB], args.map)
     game.initialize_map()
