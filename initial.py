@@ -1,19 +1,21 @@
 from game import Game
 from player import Player
+import argparse
 
-def main():
-    playerA = Player("Player A", "red", True)
-    playerB = Player("Player B", "blue", True) 
-    game = Game([playerA, playerB])
+def main(args):
+    playerA = Player("Player A", color = "red", ishuman = True) # both players are human
+    playerB = Player("Player B", color = "blue", ishuman = True) 
+    game = Game([playerA, playerB], args.map)
     game.initialize_map()
     while not game.check_win():
-        if game.current_player.is_human:
+        game.visualize()
+        if game.current_player().ishuman:
             #place troops
-            units_to_place = game.calculate_reinforcements(game.current_player)
+            units_to_place = game.calculate_reinforcements(game.current_player())
             print("Reinforce phase")
-            print("You have " + str(units) + " units to place.")
+            print("You have " + str(units_to_place) + " units to place.")
             print("You have the following territories: ")
-            for territory in game.current_player.territories:
+            for territory in game.current_player().territories:
                 print(territory)
             while units_to_place > 0:
                 print("Which territory would you like to place units on?")
@@ -30,7 +32,7 @@ def main():
             attack = input()
             while attack == "y":
                 print("You have the following territories: ")
-                for territory in game.current_player.territories:
+                for territory in game.current_player().territories:
                     print(territory)    
                 print("Which territory would you like to attack from?")
                 attacking_territory = input()
@@ -43,7 +45,7 @@ def main():
                 for player in game.players:
                     if defending_territory in player.territories:
                         defending_player = player
-                game.attack(game.current_player, attacking_territory, defending_player, defending_territory)
+                game.attack(game.current_player(), attacking_territory, defending_player, defending_territory)
                 game.check_elimination()
                 print("Would you like to attack again? (y/n)")
                 attack = input()
@@ -51,19 +53,19 @@ def main():
             #fortify
             print("Fortify phase")
             print("You have the following territories: ")
-            for territory in game.current_player.territories:
+            for territory in game.current_player().territories:
                 print(territory)
             print("Would you like to fortify? (y/n)")
             fortify = input()
             while fortify == "y":
                 print("Which territory would you like to move units from?")
                 origin_territory = input()
-                print("You have " + str(game.current_player.get_units_in_territory(origin_territory)) + " units in this territory.")
+                print("You have " + str(game.current_player().get_units_in_territory(origin_territory)) + " units in this territory.")
                 print("How many units would you like to move?")
-                units = max(int(input()), game.current_player.get_units_in_territory(origin_territory) - 1)
+                units = max(int(input()), game.current_player().get_units_in_territory(origin_territory) - 1)
                 print("Which territory would you like to move units to?")
                 destination_territory = input()
-                game.fortify(game.current_player, origin_territory, destination_territory, units)
+                game.fortify(game.current_player(), origin_territory, destination_territory, units)
                 print("Would you like to fortify again? (y/n)")
                 fortify = input()
             game.next_player()
@@ -71,4 +73,7 @@ def main():
     print(game.get_winner().name + " wins!")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Game Initialization.")
+    parser.add_argument("--map", type=str, default="world.json", help="The map file to use for the game.")
+    args = parser.parse_args()
+    main(args)

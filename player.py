@@ -1,10 +1,10 @@
 class Player:
-    def __init__(self, name, color, ishuman):
+    def __init__(self, name, color = "blue", ishuman = True):
         self.color = color
         self.territories = {} # {territory: units}
         self.cards = []
         self.units = 0
-        self.is_human = ishuman
+        self.ishuman = ishuman
 
     def add_territory(self, territory, units):
         self.territories[territory] = units
@@ -25,3 +25,6 @@ class Player:
     
     def getCards(self):
         return self.cards
+    
+    def name(self):
+        return self.name

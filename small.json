@@ -1,0 +1,13 @@
+{
+    "Territories": {
+        "One" : {"neighbors": ["Two", "Three"], "continent": "Pangea", "position": [0, 1.5]},
+        "Two" : {"neighbors": ["One", "Three"], "continent": "Pangea", "position": [-1.5, -1.5]},
+        "Three" : {"neighbors": ["One", "Two"], "continent": "Pangea", "position": [1.5, -1.5]}
+    },
+    "Continents" : {
+        "Pangea": {
+            "territories": ["One", "Two", "Three"],
+            "bonus": 5
+        }
+    }
+}
