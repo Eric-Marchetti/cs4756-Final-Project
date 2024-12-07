@@ -49,6 +49,7 @@ def main(args):
                     stop_attacking = input() == "n"
                 else:
                     stop_attacking = True
+                game.update_visualization()
 
             game.move_to_fortify_phase()
             print("Fortify phase")

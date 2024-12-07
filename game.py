@@ -1,4 +1,4 @@
-from random import random, shuffle
+from random import random, shuffle, randint
 import json
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -145,7 +145,7 @@ class Game:
         if attacking_territory not in self.risk_map["Territories"] or defending_territory not in self.risk_map["Territories"]:
             print("Invalid attack: territories do not exist.")
 
-        if attacking_territory not in self.risk_map["Territories"][attacking_territory]["neighbors"]:
+        if defending_territory not in self.risk_map["Territories"][attacking_territory]["neighbors"]:
             print("Invalid attack: attacking territory must be adjacent to the defending territory.")
             return
 
@@ -157,11 +157,11 @@ class Game:
             print("Invalid attack: defending territory cannot be owned by the player.")
             return
 
-        attacker_rolls = min(self.risk_map["Territories"][attacking_territory]["units"], 3)
+        attacker_rolls = min(self.risk_map["Territories"][attacking_territory]["units"] - 1, 3)
         defender_rolls = min(self.risk_map["Territories"][defending_territory]["units"], 2)
         
-        attacker_dice = [random.randint(1, 6) for i in range(attacker_rolls)].sort(reverse=True)
-        defender_dice = [random.randint(1, 6) for i in range(defender_rolls)].sort(reverse=True)
+        attacker_dice = sorted([randint(1, 6) for _ in range(attacker_rolls)], reverse=True)
+        defender_dice = sorted([randint(1, 6) for _ in range(defender_rolls)], reverse=True)
 
         for i in range(min(attacker_rolls, defender_rolls)):
             if attacker_dice[i] > defender_dice[i]:
@@ -175,6 +175,7 @@ class Game:
                 self.players[previous_owner]["territories"].remove(defending_territory)
                 self.players[self.current_player_id]["territories"].append(defending_territory)
                 self.risk_map["Territories"][defending_territory]["units"] = attacker_rolls - i - 1
+                self.risk_map["Territories"][attacking_territory]["units"] -= attacker_rolls - i - 1
                 break
 
     def fortify(self, origin_territory, destination_territory, units):
