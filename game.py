@@ -2,6 +2,7 @@ from random import random, shuffle
 import json
 import networkx as nx
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from typing import List
 
 class Player:
@@ -14,7 +15,7 @@ class Player:
         return {"name": self.name, "color": self.color, "ishuman": self.ishuman, "territories": [], "reinforcements": 0, "cards": []}
 
 class Game:
-    def __init__(self, players : List[Player], risk_map):
+    def __init__(self, players : List[Player], risk_map, vis = False):
         '''
         Initializes the game with a list of players and a risk map.
         The risk map is a JSON file that contains the territories and continents of the game.
@@ -26,6 +27,17 @@ class Game:
         self.turn = 0
         self.num_trade_ins = 0
         self.risk_map = json.load(open(risk_map))
+        self.vis = vis
+        plt.ion()
+        self.fig, self.ax = plt.subplots(figsize=(10, 10))
+        self.G = nx.Graph()
+        self.pos = {}
+
+        for territory, data in self.risk_map["Territories"].items(): 
+            self.G.add_node(territory) 
+            self.pos[territory] = data['position'] 
+            for neighbor in data['neighbors']: 
+                self.G.add_edge(territory, neighbor)
 
     def initialize_map(self):
         '''
@@ -36,10 +48,11 @@ class Game:
         shuffled_territories = list(self.risk_map["Territories"].keys())
         shuffle(shuffled_territories)
         for territory in shuffled_territories:
-            self.risk_map["Territories"][territory]["owner"] = self.players[self.current_player_id] # territory ownership is assigned by player id 
+            self.risk_map["Territories"][territory]["owner"] = self.current_player_id # territory ownership is assigned by player id 
             self.players[self.current_player_id]["territories"].append(territory) # list for quick length checking
             self.risk_map["Territories"][territory]["units"] = 1
             self.current_player_id = (self.current_player_id + 1) % len(self.players)
+        return
 
     def next_player(self):
         '''
@@ -70,13 +83,55 @@ class Game:
             print("Invalid reinforce: territory must be owned by the player.")
             return
         
-        if self.players[self.current_player_id]['units'] < units:
+        if self.players[self.current_player_id]['reinforcements'] < units:
             print("Invalid reinforce: player does not have enough units.")
             return
         
         self.risk_map["Territories"][territory]["units"] += units
         self.players[self.current_player_id]['reinforcements'] -= units
         return
+
+    def reinforce_batch(self, territories):
+        '''
+        Allows a player to place units on multiple territories they own using a dictionary.
+        The player must own the territories and have units to place.
+
+        Updates the number of remaining reinforcements the player has.
+        '''
+        total_units = 0
+        for units in territories.values():
+            total_units += units
+
+        if self.players[self.current_player_id]['reinforcements'] < total_units:
+            print("Invalid reinforce: player does not have enough units.")
+
+        for territory, units in territories.items():
+            if territory not in self.risk_map["Territories"]:
+                print("Invalid reinforce: territory does not exist.")
+                return
+            
+            if self.risk_map["Territories"][territory]["owner"] != self.current_player_id:
+                print("Invalid reinforce: territory must be owned by the player.")
+                return
+            
+            self.risk_map["Territories"][territory]["units"] += units
+
+        self.players[self.current_player_id]['reinforcements'] -= total_units
+
+    def get_reinforcements(self):
+        '''
+        Returns the number of reinforcements the current player has.
+        '''
+        return self.players[self.current_player_id]['reinforcements']
+
+    def can_attack(self):
+        '''
+        Returns True if the current player can attack another player, False otherwise.
+        '''
+        for territory in self.players[self.current_player_id]['territories']:
+            for neighbor in self.risk_map["Territories"][territory]["neighbors"]:
+                if self.risk_map["Territories"][neighbor]["owner"] != self.current_player_id and self.risk_map["Territories"][territory]["units"] > 1:
+                    return True
 
     def attack(self, attacking_territory, defending_territory):
         '''
@@ -246,29 +301,51 @@ class Game:
         '''
         return self.risk_map['Territories'][territory]['neighbors']
     
-    def visualize(self):
+    def get_territories(self):
         '''
-        Visualizes the current state of the game with a graph
+        Returns a list of the territories owned by the current player
         '''
-        G = nx.Graph()
-        pos = {}
-        labels = {}
-        colors = []
+        return self.players[self.current_player_id]['territories']
 
-        for territory,data in self.risk_map["Territories"].items():
-            G.add_node(territory)
-            pos[territory] = data['position']
-            labels[territory] = f"{territory}\n{data['units']} troops"
-            if "owner" in data:
-                colors.append(data['owner'].color)
-            else:
-                colors.append("gray")
-            for neighbor in data['neighbors']:
-                G.add_edge(territory, neighbor)
-        plt.figure(figsize=(10,10))
-        nx.draw(G, pos, labels=labels, node_color=colors, with_labels=True)
-        plt.show()
+    def update_visualization(self): 
+        labels = {} 
+        colors = []
+        for territory, data in self.risk_map["Territories"].items(): 
+            labels[territory] = f"{territory}\n{data['units']} troops" 
+            if "owner" in data: 
+                colors.append(self.players[data['owner']]['color']) 
+            else: 
+                colors.append("gray") 
+        self.ax.clear() 
+        nx.draw(self.G, self.pos, labels=labels, node_color=colors, with_labels=True, ax=self.ax) 
+        self.ax.set_title(f"{self.players[self.current_player_id]['name']}'s turn") 
+        plt.pause(0.1) # Pause for a short time to update the plot
+
+    def move_to_reinforce_phase(self):
+        '''
+        Moves the game to the reinforce phase by calculating the reinforcements for the current player.
+        '''
+        self.players[self.current_player_id]['reinforcements'] = self.calculate_reinforcements()
+        if self.vis:
+            self.update_visualization()
+        return
+
+    def move_to_attack_phase(self):
+        '''
+        Moves the game to the attack phase.
+        '''
+        if self.vis:
+            self.update_visualization()
+        return
     
+    def move_to_fortify_phase(self):
+        '''
+        Moves the game to the fortify phase.
+        '''
+        if self.vis:
+            self.update_visualization()
+        return
+
 class Card:
     def __init__(self, territory, unit_type):
         self.territory = territory
