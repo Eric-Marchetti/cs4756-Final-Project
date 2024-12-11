@@ -35,7 +35,8 @@ class Game:
 
         for territory, data in self.risk_map["Territories"].items(): 
             self.G.add_node(territory) 
-            self.pos[territory] = data['position'] 
+            x,y = data['position']
+            self.pos[territory] = x, 2.5 - y
             for neighbor in data['neighbors']: 
                 self.G.add_edge(territory, neighbor)
 
@@ -48,6 +49,7 @@ class Game:
         shuffled_territories = list(self.risk_map["Territories"].keys())
         shuffle(shuffled_territories)
         for territory in shuffled_territories:
+            print("Assigning territory " + territory + " to " + self.players[self.current_player_id]['name'])
             self.risk_map["Territories"][territory]["owner"] = self.current_player_id # territory ownership is assigned by player id 
             self.players[self.current_player_id]["territories"].append(territory) # list for quick length checking
             self.risk_map["Territories"][territory]["units"] = 1
@@ -312,12 +314,14 @@ class Game:
         labels = {} 
         colors = []
         for territory, data in self.risk_map["Territories"].items(): 
+            print(territory, data)
             labels[territory] = f"{territory}\n{data['units']} troops" 
             if "owner" in data: 
                 colors.append(self.players[data['owner']]['color']) 
             else: 
                 colors.append("gray") 
         self.ax.clear() 
+        #print(self.G.nodes)
         nx.draw(self.G, self.pos, labels=labels, node_color=colors, with_labels=True, ax=self.ax) 
         self.ax.set_title(f"{self.players[self.current_player_id]['name']}'s turn") 
         plt.pause(0.1) # Pause for a short time to update the plot
