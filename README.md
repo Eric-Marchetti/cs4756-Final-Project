@@ -9,17 +9,12 @@ $$\begin{bmatrix} o_1 & u_1 \\ o_2 & u_2 \\ \vdots & \vdots \\ o_T & u_T \end{bm
 
 Where $o_i$ encodes the owner id of and $u_i$ encodes the number of units on territory $i$,  
 
-## Model Player GetActions() Format
-$$ T = \# \text{ of territories}, R = \text{reinforcement count}$$
+## New Format
+$$\text{observation = } \begin{bmatrix}\begin{bmatrix} o_0 & u_0 \\ \vdots & \vdots \\ o_{T-1} & u_{T-1} \end{bmatrix}&R& A \end{bmatrix},$$
+$$ \text{action = }\begin{bmatrix}\begin{bmatrix}r_0 \\ \vdots \\ r_{T-1}\end{bmatrix}\begin{bmatrix}a_{0,0} & \dots & a_{T-1,0} \\ \vdots & & \vdots \\ a_{0,T-1} & \dots & a_{T-1,T-1} \end{bmatrix} \begin{bmatrix} f_{0,0} & \dots & f_{T-1,0} \\ \vdots & & \vdots \\ f_{0,T-1} & \dots & f_{T-1,T-1} \end{bmatrix}\end{bmatrix}$$
 
-$3 \times T \times T$ Tensor: $$\begin{bmatrix} \begin{bmatrix} R & \mathbf{0} \\ \mathbf{0} & \mathbf{0} \end{bmatrix} & \begin{bmatrix} a_{1,1} & a_{2,1} & \dots & a_{T,1} \\ \vdots & \vdots & \vdots & \vdots \\ a_{1,T} & a_{2,T} & \dots & a_{T,T} \end{bmatrix} & \begin{bmatrix} o_{1,1} & \dots & o_{T,1} \\ \vdots & & \vdots \\ o_{1,T} & \dots & o_{T,T} \end{bmatrix} \end{bmatrix}$$
+$o$ values indicate whether the player is in control of a territory (if the indicator is the same as the current player ID), R is given by the environment as the total number of reinforcements. Can force the computer to fully commit to a reinforce if this still isn't working. $a$ values indicate along which *edge* to attack with how many troops. 0 all rows that are not controlled by the player. $A$ is adjacency. This gives an action space that is $T \times (2T + 1)$ and is integer valued and observation space that is $T \times (T+3)$ and also integer valued.
 
-Where  $R$ is the total number of accessible reinforcements (stored in position $(0,0)$), $a_{i,j}$ is $1$ if territories $i$ and $j$ are adjacent and 0 otherwise, and $o_{i,j}$ is the number of troops the player *could* move from $i$ to $j$. 
+To 'clean' prediction output, can set all rows of the action matrix where $o_i \neq id$ to 0 since, no fortification, attack, or reinforcement can occur on a non-player controlled territory. Normalize the reinforcement values such that their sum is less than or equal to $R$, clamp the attack and fortify values (by row) such that the sub-sections of the rows are also normalized to $u_i$ for each $i$.
 
-## Model Player Action Format
-
-$3 \times T \times 2$ Tensor: $$\begin{bmatrix} \begin{bmatrix} r_1 & 0 \\ r_2 & 0 \\ \vdots & \vdots \\ r_T & 0\end{bmatrix} & \begin{bmatrix} a_1 & d_1 \\ a_2 & d_2 \\ \vdots & \vdots \\ a_T & d_T \end{bmatrix} & \begin{bmatrix} \vdots & \vdots \\ x & y \\ \vdots & \vdots \end{bmatrix} \end{bmatrix}$$
-
-Where $r$ is the number of reinforcements to deploy to territory $i$, $a_i$  is the number of attacking troops to send at $d_i$ (keep sending until the number is reached), and $x$ indicates how many troops (from the territory at index $x$) to send to the territory at index $y$.
-
-Since having multiple stages of actions severely complicates the process of learning a model, here the model assumes that they must decide what reinforcements, attacks, and fortifications to do *on the start of their turn*, fortifications then play out to the *extend possible*.
+Network can thus be $f(x : T \times (3 + T)) = y : T \times (2T + 1)$
