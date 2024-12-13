@@ -74,9 +74,9 @@ class RiskEnvWrapper(gym.Env):
     def filter_actions(self, reinforce_action, attack_units, fortify_units):
         # cannot reinforce, attack, or fortify on rows that are not owned
         reinforce_action = reinforce_action * (self.risk_env.game_state[:,0] == self.risk_env.current_player_id) 
-        reinforce_action = reinforce_action / np.sum(reinforce_action) 
+        reinforce_action = reinforce_action / np.where(np.sum(reinforce_action) > 0, np.sum(reinforce_action), 1) 
         reinforce_action = np.nan_to_num(reinforce_action) 
-        reinforce_action = (reinforce_action * (self.risk_env.get_reinforcements(self.risk_env.current_player_id) + 1)).astype(np.int32)
+        reinforce_action = (reinforce_action * (self.risk_env.get_reinforcements(self.risk_env.current_player_id))).astype(np.int32)
         # also cannot attack or fortify from rows that have under 2 units
         # also cannot attack TO columns that are owned, or fortify TO columns that aren't owned
 
@@ -100,13 +100,15 @@ class RiskEnvWrapper(gym.Env):
         for i in range(self.T): 
             for j in range(self.T): 
                 if self.risk_env.adjacencies[i, j] == 0 or self.risk_env.game_state[i, 1] < 2: 
-                    attack_units[i, j] = 0 
+                    attack_units[i, j] = 0
                     fortify_units[i, j] = 0 
                 if self.risk_env.game_state[i, 0] != self.risk_env.current_player_id or self.risk_env.game_state[j, 0] == self.risk_env.current_player_id: 
                     attack_units[i, j] = 0 
                 if self.risk_env.game_state[j, 0] != self.risk_env.current_player_id or not self.risk_env.is_link(self.risk_env.current_player_id, self.risk_env.adjacencies, i, j): 
                     fortify_units[i, j] = 0 
 
+        # print('attack_units: ', attack_units)
+    
         # for i in range(self.T): 
         #     attack_units[i] = np.minimum(attack_units[i], self.risk_env.game_state[i,1] - 1) 
         #     if np.sum(attack_units[i]) > self.risk_env.game_state[i,1] - 1: 

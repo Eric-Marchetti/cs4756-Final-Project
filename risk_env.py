@@ -171,7 +171,7 @@ class RiskEnv():
             if np.all(self.game_state[start:end, 0] == player_id):
                 reinforcements += bonus
         
-        reinforcements += max(3, np.sum(self.game_state[self.game_state[:,0] == player_id, 1]) // 3)
+        reinforcements += max(3, np.sum(self.game_state[:,0] == player_id), 1 // 3)
         return reinforcements
     
     def reinforce(self, player_id, reinforce_action):
@@ -186,7 +186,9 @@ class RiskEnv():
         # check if the player has enough reinforcements
         reinforcements = self.get_reinforcements(player_id)
         if np.sum(reinforce_action) > reinforcements:
-            raise ValueError("Not enough reinforcements")
+            print(reinforce_action, reinforcements)
+            return
+            # raise ValueError("Not enough reinforcements")
         
         # check if the player is reinforcing territories they own
         if not np.all(reinforce_action[self.game_state[:,0] == player_id] >= 0):
@@ -216,10 +218,12 @@ class RiskEnv():
                 raise ValueError("Cannot attack from a territory you do not own")
             # check if the player is attacking a territory they own
             if self.game_state[index[1],0] == player_id:
-                print(self.game_state[index[0]])
-                print("Player ", player_id, " attacking from ", index[0], " to ", index[1])
-                print(self.game_state[index[1]])
-                raise ValueError("Cannot attack a territory you own")
+                # print(self.game_state[index[0]])
+                # print("Player ", player_id, " attacking from ", index[0], " to ", index[1])
+                # print("with ", attack_units, " units")
+                # print(self.game_state[index[1]])
+                return
+                # raise ValueError("Cannot attack a territory you own")
             # check if the player is attacking an adjacent territory
             if self.adjacencies[index[0], index[1]] == 0:
                 raise ValueError("Cannot attack a non-adjacent territory")

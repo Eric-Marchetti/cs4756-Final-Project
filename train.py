@@ -10,11 +10,22 @@ def main(args):
     env = RiskEnvWrapper(risk_env)
     # Initialize and train TriNet
     if args.load:
-        trinet = TriNet(env, model_path=args.load, visualize=True)
+        trinet = TriNet(env, model_path=args.load, visualize=False)
     else:
-        trinet = TriNet(env)
+        trinet = TriNet(env,model_path="models/trinet")
     
     trinet.train(100000)
+    import matplotlib.pyplot as plt
+
+    # Assuming trinet.train() returns a list of training losses
+    losses = trinet.train(100000)
+
+    # Plot the training loss over time
+    plt.plot(losses)
+    plt.xlabel('Training Steps')
+    plt.ylabel('Loss')
+    plt.title('Training Loss Over Time')
+    plt.show()
     trinet.save_model("models/trinet")
 
 if __name__ == "__main__": # Initialize environment and players 

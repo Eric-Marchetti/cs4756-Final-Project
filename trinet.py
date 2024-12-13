@@ -15,7 +15,12 @@ class TriNet(nn.Module):
         super(TriNet, self).__init__()
         self.env = DummyVecEnv([lambda: env])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.agent = PPO("MultiInputPolicy", self.env, verbose=1)
+        
+        learning_rate = 0.0001 
+        clip_range = 0.1 
+        entropy_coef = 0.01
+        
+        self.agent = PPO("MultiInputPolicy", self.env, verbose=1, learning_rate=learning_rate, clip_range=clip_range, ent_coef=entropy_coef)
         self.agent.policy.to(self.device)
         if model_path and model_path != "random" and os.path.exists(model_path):
             self.load_model(model_path)
