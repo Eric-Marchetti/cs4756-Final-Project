@@ -1,21 +1,20 @@
 import numpy as np
-import gymnasium as gym
-from gymnasium import spaces
-import networkx as nx
-import matplotlib.pyplot as plt
-import time
-import trinet
+import json
 
 class Player():
-    def __init__(self, name, mdl_path):
-        """
-        Initialize a player object
-        Parameters:
-        name: the name of the player
-        mdl_pth: the type of the player ('human' or the path to the model)
-        """
-        self.name = name
-        self.mdl_pth = mdl_path
+    def __init__(self, player_id, name=None, policy=None):
+        self.player_id = player_id
+        self.alive = True
+
+class HumanPlayer(Player):
+    def __init__(self, player_id, name=None):
+        super().__init__(player_id, name)
+        self.policy = None
+
+class Actor(Player):
+    def __init__(self, player_id, name=None, policy=None):
+        super().__init__(player_id, name)
+        self.policy = policy
                 
 
 def parse_board_layout(board):
@@ -78,6 +77,7 @@ class RiskEnv():
         Note: for efficiency, territories should be grouped by continent for faster ownership checks
 
         """
+        board = json.load(open(board))
         self.players = players
         self.board = board # keep a copy for reset
         self.game_state = np.array(game_state_from_board(board))
@@ -95,10 +95,8 @@ class RiskEnv():
         last_player_id = 0
         num_players = len(self.players)
         num_territories = len(self.game_state)
-        # shuffle territories, but preserve a list of indices to unshuffle
         indices = np.arange(num_territories)
         np.random.shuffle(indices)
-        # iterate through territories and assign to players
         for i in range(num_territories):
             self.game_state[indices[i]] = (i % num_players, 1)
             last_player_id = i % num_players
@@ -219,7 +217,7 @@ class RiskEnv():
             return False
         # check if the player is attacking territories they own
         # (all the indices in the second column should not be owned by the player)
-        if not np.all(np.where(attack_action[:,0] > 0, self.game_state[attack_action[:,1],0] != player_id, True)):
+        if not np.all(np.where(attack_action[:,0] > 0, self.game_state[attack_action[:,1] - 1,0] != player_id, True)):
             # print("Cannot attack territories you own")
             return False
         
@@ -300,32 +298,21 @@ class RiskEnv():
         fortify_action: a numpy array of shape (T,2) where the first column is the number
         of units to fortify with and the second column is the index of the territory to fortify
         """
-        # check that the player is only fortifying once
-        # if np.sum(fortify_action[:,0]) > 1 or np.sum(fortify_action[:,0] > 0) > 1:
-        #     raise ValueError("Can only fortify once")
-        # src = np.where(fortify_action[:,0] > 0)[0]
         src = fortify_action[1]
         dest = fortify_action[2]
         quantity = fortify_action[0]
         # check that the player is fortifying from a territory they own
-        if self.game_state[src,0] != player_id:
-            # print("Cannot fortify from a territory you do not own")
-            return
+        if self.game_state[src - 1,0] != player_id:
+            raise ValueError("Cannot fortify from a territory you do not own")
+            
         # check that the player is fortifying to a territory they own
-        if self.game_state[dest,0] != player_id:
-            # ("Cannot fortify to a territory you do not own")
-            return
+        if self.game_state[dest - 1,0] != player_id:
+            raise ValueError("Cannot fortify to a territory you do not own")
+            
         # check that the player is fortifying connected territories
         if not self.is_link(player_id, self.adjacencies, src, dest):
-            # ("Cannot fortify unconnected territories")
-            return
+            raise ValueError("Cannot fortify unconnected territories")
         
-        # # check that the player is not fortifying with more units than they have
-        # if quantity > self.game_state[src,1]:
-        #     raise ValueError("Cannot fortify with more units than you have")
-
-        # fortify with the minimum of the quantity and the number
-        # of units on the source territory - 1
         fortify_quantity = min(quantity, self.game_state[src,1] - 1)
         self.game_state[src,1] -= fortify_quantity
         self.game_state[dest,1] += fortify_quantity
@@ -378,31 +365,6 @@ class RiskEnv():
         """
         return [p.name for p in self.players].index(player)
 
-
-    def get_reinforce_attack_input_dim(self):
-        """
-        Get the input dimension for the reinforce and attack stage
-        """
-        return len(self.game_state) * 2 + 3 * len(self.game_state) * len(self.game_state)
-    
-    def get_reinforce_attack_output_dim(self):
-        """
-        Get the output dimension for the reinforce and attack stage
-        """
-        return 2 * len(self.game_state) * 2
-    
-    def get_fortify_input_dim(self):
-        """
-        Get the input dimension for the fortify stage
-        """
-        return len(self.game_state) * 2 + len(self.game_state) * len(self.game_state)
-    
-    def get_fortify_output_dim(self):
-        """
-        Get the output dimension for the fortify stage
-        """
-        return 3
-    
     def get_fortify_paths(self, player_id):
         """
         Get the fortify paths for a player
@@ -423,166 +385,3 @@ class RiskEnv():
                         fortify_paths[i,j] = self.game_state[i,1] - 1
 
         return fortify_paths
-    
-class RiskEnvWrapper(gym.Env): 
-    def __init__(self, risk_env, visualize=False): 
-        super(RiskEnvWrapper, self).__init__()
-        self.risk_env = risk_env
-        T = risk_env.game_state.shape[0]
-
-        self.action_space = spaces.Box(low = 0, high = np.array([np.inf] * T * 2 + [T] * (T + 2) + [np.inf]), shape = (T + T + T + 2 + 1,), dtype=np.int32)
-        # reinforcements, attacking units, attacking destination, fortify source and destination, fortify units
-        self.observation_space = spaces.Dict({
-            'owners': spaces.Box(low=0, high=len(self.risk_env.players), shape=(T,), dtype=np.int32),
-            'units': spaces.Box(low=0, high=np.inf, shape=(T,), dtype=np.int32),
-            'reinforcement_max': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.int32),
-            'adjacencies': spaces.Box(low=0, high=1, shape=(T,T), dtype=np.int32),
-            'fortify_paths': spaces.Box(low=0, high=np.inf, shape=(T,T), dtype=np.int32)
-        })
-
-        self.visualize = visualize
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        self.risk_env.reset()
-        if self.visualize:
-            self.initialize_graph()
-        return self._get_obs(), {}
-    
-    def step(self, action):
-        T = self.risk_env.game_state.shape[0]
-        reinforce_action = action[:T].astype(np.int32)
-        attack_units = action[T:2*T].astype(np.int32)
-        attack_dest = action[2*T:3*T].astype(np.int32)
-        fortify_src_dest = action[3*T:3*T+2].astype(np.int32)
-        fortify_units = action[3*T+2:3*T+3].astype(np.int32)
-        
-        R = self.risk_env.get_reinforcements(self.risk_env.current_player_id)
-        
-        self.risk_env.reinforce(self.risk_env.current_player_id, reinforce_action)
-        self.risk_env.winner = self.risk_env.attack(self.risk_env.current_player_id, np.stack([attack_units, attack_dest], axis=1))
-        self.risk_env.fortify(self.risk_env.current_player_id, np.concatenate([fortify_units, fortify_src_dest]))
-        
-        obs = self._get_obs()
-        reward = self.calculate_reward()
-        done, winner = self.risk_env.check_winner()
-        info = {}
-        
-        self.risk_env.current_player_id = (self.risk_env.current_player_id + 1) % len(self.risk_env.players)
-        self.risk_env.turn += 1 if self.risk_env.current_player_id == self.risk_env.start_player_id else 0
-
-        terminated = done
-        truncated = False
-
-        if self.visualize:
-            self.update_graph()
-
-        return obs, reward, terminated, truncated, info
-    
-    def _get_obs(self):
-        owners = self.risk_env.game_state[:,0]
-        units = self.risk_env.game_state[:,1]
-        reinforcement_max = self.risk_env.get_reinforcements(self.risk_env.current_player_id)
-        adjacencies = self.risk_env.adjacencies
-        fortify_paths = self.risk_env.get_fortify_paths(self.risk_env.current_player_id)
-
-        assert owners is not None, "owners is None"
-        assert units is not None, "units is None"
-        assert reinforcement_max is not None, "reinforcement_max is None"
-        assert adjacencies is not None, "adjacencies is None"
-        assert fortify_paths is not None, "fortify_paths is None"
-
-        return {
-            'owners': self.risk_env.game_state[:,0],
-            'units': self.risk_env.game_state[:,1],
-            'reinforcement_max': self.risk_env.get_reinforcements(self.risk_env.current_player_id),
-            'adjacencies': self.risk_env.adjacencies,
-            'fortify_paths': self.risk_env.get_fortify_paths(self.risk_env.current_player_id)
-        }
-    
-    def calculate_reward(self):
-        return self.risk_env.get_reinforcements(self.risk_env.current_player_id) + (100 if self.risk_env.check_winner()[0] else 0)
-
-    def render(self, mode='human'):
-        while not self.risk_env.check_winner()[0]:
-            self.update_graph()
-            self.risk_env.current_player_id = (self.risk_env.current_player_id + 1) % len(self.risk_env.players)
-            self.risk_env.turn += 1 if self.risk_env.current_player_id == self.risk_env.start_player_id else 0
-            time.sleep(0.3)
-
-        self.update_graph()
-        print(f"Winner: {self.risk_env.get_winnning_player().name}")
-    
-    def get_random_actions(self):
-        T = self.risk_env.game_state.shape[0]
-        # reinforce, attack, fortify
-        # to reinforce, distribute the total reinforcements randomly among owned territories
-        owned = np.where(self.risk_env.game_state[:,0] == self.risk_env.current_player_id)[0]
-        reinforce_action = np.zeros(T)
-        # distribute the total reinfrocements randomly among owned
-        total = self.risk_env.get_reinforcements(self.risk_env.current_player_id)
-        for i in range(total):
-            reinforce_action[np.random.choice(owned)] += 1
-        # attack with random units from random territories to random territories
-        attack_units = np.zeros(T)
-        attack_dest = np.zeros(T)
-        for i in range(T):
-            if self.risk_env.game_state[i,0] == self.risk_env.current_player_id:
-                attack_units[i] = np.random.randint(0, self.risk_env.game_state[i,1])
-                unowned = np.where(self.risk_env.game_state[:,0] != self.risk_env.current_player_id)[0]
-                attack_dest[i] = np.random.choice(np.where(self.risk_env.adjacencies[i] == 1 and unowned)[0])
-        # fortify with random units from random territories to random territories
-        fortify_src_dest = np.zeros(2)
-        fortify_units = np.zeros(1)
-        src = np.random.choice(owned)
-        dest = np.random.choice(np.where(self.risk_env.adjacencies[src] == 1 and self.risk_env.game_state[:,0] == self.risk_env.current_player_id)[0])
-        fortify_units[0] = np.random.randint(0, self.risk_env.game_state[src,1])
-        fortify_src_dest[0] = src
-        fortify_src_dest[1] = dest
-
-        return np.concatenate([reinforce_action, attack_units, attack_dest, fortify_src_dest, fortify_units])        
-
-    def initialize_graph(self):
-        for territory, data in self.risk_env.board['Territories'].items():
-            self.G.add_node(territory, pos=(data["position"][0], data["position"][1]))
-        for territory, data in self.risk_env.board['Territories'].items():
-            for neighbor in data['neighbors']:
-                self.G.add_edge(territory, neighbor)
-        self.pos = nx.spring_layout(self.G)
-
-    def update_graph(self):
-        G = nx.Graph()
-
-        # Add nodes with troop and ownership information
-        for i in range(self.risk_env.game_state.shape[0]):
-            G.add_node(
-                self.risk_env.territories[i],
-                troops=self.risk_env.game_state[i, 1],
-                owner=self.risk_env.players[self.risk_env.game_state[i, 0]].name
-            )
-
-        # Add edges based on adjacencies
-        for i in range(self.risk_env.game_state.shape[0]):
-            for j in range(i + 1, self.risk_env.game_state.shape[0]):
-                if self.risk_env.adjacencies[i, j] == 1:
-                    G.add_edge(self.risk_env.territories[i], self.risk_env.territories[j])
-
-        # Define positions for all nodes (you may need to adjust these positions)
-        pos = nx.spring_layout(G)
-
-        # Draw the graph
-        plt.figure(figsize=(12, 8))
-        nx.draw(G, pos, with_labels=True, node_size=3000, node_color='skyblue', font_size=10, font_weight='bold')
-
-        # Draw node labels with troop and ownership information
-        labels = {node: f"{node}\nTroops: {data['troops']}\nOwner: {data['owner']}" for node, data in G.nodes(data=True)}
-        nx.draw_networkx_labels(G, pos, labels, font_size=8)
-
-        plt.show()
-
-    def run(self):
-        while not self.risk_env.check_winner()[0]:
-            self.step(self.get_random_actions())
-            if self.visualize:
-                self.update_graph()
-            time.sleep(1)

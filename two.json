@@ -1,0 +1,12 @@
+{
+    "Territories":{
+        "One": {"neighbors": ["Two"], "continent": "North America", "position": [0.1, 0.1]},
+        "Two": {"neighbors": ["One"], "continent": "North America", "position": [0.3, 0.1]}
+    },
+    "Continents": {
+        "North America": {
+            "territories": ["One", "Two"],
+            "bonus": 5
+        }
+    }
+}
