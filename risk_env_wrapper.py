@@ -6,11 +6,13 @@ import matplotlib.pyplot as plt
 import time
 
 class RiskEnvWrapper(gym.Env): 
-    def __init__(self, risk_env, visualize=False): 
+    def __init__(self, risk_env, visualize=False, max_episode_steps = 200): 
         super(RiskEnvWrapper, self).__init__()
         self.risk_env = risk_env
         self.T = risk_env.game_state.shape[0]
         self.visualize = visualize
+        self.max_episode_steps = max_episode_steps
+        self.current_step = 0
 
         # self.action_space = spaces.Dict({
         #     'reinforce': spaces.Box(low=0, high=1, shape=(self.T,), dtype=np.float32),
@@ -29,6 +31,7 @@ class RiskEnvWrapper(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.risk_env.reset()
+        self.current_step = 0
         return self._get_obs(), {}
     
     def step(self, action):
@@ -60,16 +63,29 @@ class RiskEnvWrapper(gym.Env):
         # next player
         self.risk_env.current_player_id = (self.risk_env.current_player_id + 1) % len(self.risk_env.players)
 
-        return self._get_obs(), self.calculate_reward(), self.risk_env.check_winner()[0], False, {}
+        self.current_step += 1
+        done = self.risk_env.check_winner()[0]
+        if not done and self.current_step >= self.max_episode_steps:
+            done = True
+
+        return self._get_obs(), self.calculate_reward(), done, False, {}
     
     def _get_obs(self):
-        return {
+        obs = {
             'owners': self.risk_env.game_state[:,0],
             'units': self.risk_env.game_state[:,1],
             'reinforcement_max': self.risk_env.get_reinforcements(self.risk_env.current_player_id),
             'adjacencies': self.risk_env.adjacencies,
             'fortify_paths': self.risk_env.get_fortify_paths(self.risk_env.current_player_id)
         }
+
+        # Example normalization: Assume max_units = 50 as a heuristic
+        max_units = 50.0
+        obs['units'] = np.clip(obs['units'], 0, max_units) / max_units
+        # Similarly, normalize reinforcement_max by some scale, say max 20
+        obs['reinforcement_max'] = np.clip(obs['reinforcement_max'], 0, 20) / 20.0
+
+        return obs
     
     def filter_actions(self, reinforce_action, attack_units, fortify_units):
         # cannot reinforce, attack, or fortify on rows that are not owned
@@ -104,8 +120,10 @@ class RiskEnvWrapper(gym.Env):
                     fortify_units[i, j] = 0 
                 if self.risk_env.game_state[i, 0] != self.risk_env.current_player_id or self.risk_env.game_state[j, 0] == self.risk_env.current_player_id: 
                     attack_units[i, j] = 0 
-                if self.risk_env.game_state[j, 0] != self.risk_env.current_player_id or not self.risk_env.is_link(self.risk_env.current_player_id, self.risk_env.adjacencies, i, j): 
-                    fortify_units[i, j] = 0 
+                if (self.risk_env.game_state[i, 0] != self.risk_env.current_player_id 
+                    or self.risk_env.game_state[j, 0] != self.risk_env.current_player_id
+                    or not self.risk_env.is_link(self.risk_env.current_player_id, self.risk_env.adjacencies, i, j)):
+                    fortify_units[i, j] = 0
 
         # print('attack_units: ', attack_units)
     
@@ -116,21 +134,29 @@ class RiskEnvWrapper(gym.Env):
         #         fortify_units[i] = np.minimum(fortify_units[i], self.risk_env.game_state[i,1] - 1) 
         #         if np.sum(fortify_units[i]) > self.risk_env.game_state[i,1] - 1: 
         #             fortify_units[i] = (fortify_units[i] / np.sum(fortify_units[i]) * (self.risk_env.game_state[i,1] - 1)).astype(np.int32) 
-        for i in range(self.T): 
-            attack_units[i] = np.minimum(attack_units[i], self.risk_env.game_state[i, 1] - 1) 
-            if np.sum(attack_units[i]) > self.risk_env.game_state[i, 1] - 1: 
-                attack_units[i] = (attack_units[i] / np.sum(attack_units[i]) * (self.risk_env.game_state[i, 1] - 1)).astype(np.int32) 
-            fortify_units[i] = np.minimum(fortify_units[i], self.risk_env.game_state[i, 1] - 1) 
-            if np.sum(fortify_units[i]) > self.risk_env.game_state[i, 1] - 1: 
-                fortify_units[i] = (fortify_units[i] / np.sum(fortify_units[i]) * (self.risk_env.game_state[i, 1] - 1)).astype(np.int32)
-        
+        for i in range(self.T):
+            # For attacks, cannot use more than (current units - 1)
+            max_units_available = self.risk_env.game_state[i, 1] - 1
+            if max_units_available < 0:
+                max_units_available = 0
+            if np.sum(attack_units[i]) > max_units_available:
+                total = np.sum(attack_units[i])
+                if total > 0:
+                    attack_units[i] = (attack_units[i] / total * max_units_available).astype(np.int32)
+
+            # Similarly for fortify, cannot move more units than (current units - 1)
+            if np.sum(fortify_units[i]) > max_units_available:
+                total = np.sum(fortify_units[i])
+                if total > 0:
+                    fortify_units[i] = (fortify_units[i] / total * max_units_available).astype(np.int32)
+
         return reinforce_action, attack_units, fortify_units
     
     def calculate_reward(self):
         current_player_id = self.risk_env.current_player_id
-        reward = np.sum(self.risk_env.game_state[:,0] == current_player_id)
+        reward = np.sum(self.risk_env.game_state[:,0] == current_player_id) / self.T
         if self.risk_env.winner:
-            reward += 1000
+            reward += 1.0
         return reward
 
     def print_game_state(self):

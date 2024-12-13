@@ -273,11 +273,11 @@ class RiskEnv():
             return
 
         # check that the player is fortifying from a territory they own
-        if self.game_state[src - 1,0] != player_id:
+        if self.game_state[src,0] != player_id:
             raise ValueError("Cannot fortify from a territory you do not own")
             
         # check that the player is fortifying to a territory they own
-        if self.game_state[dest - 1,0] != player_id:
+        if self.game_state[dest,0] != player_id:
             raise ValueError("Cannot fortify to a territory you do not own")
             
         # check that the player is fortifying connected territories
@@ -310,7 +310,7 @@ class RiskEnv():
                 visited[current] = 1
                 neighbors = np.where(adjacencies[current] == 1)[0]
                 stack.extend([n for n in neighbors if self.game_state[n,0] == player_id])    
-            return False
+        return False
     
     def is_alive(self, player):
         """

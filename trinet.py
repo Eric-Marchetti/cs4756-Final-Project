@@ -16,7 +16,7 @@ class TriNet(nn.Module):
         self.env = DummyVecEnv([lambda: env])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        learning_rate = 0.0001 
+        learning_rate = 0.00001 
         clip_range = 0.1 
         entropy_coef = 0.01
         
