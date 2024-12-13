@@ -10,6 +10,7 @@ class Player:
         self.color = color
         self.ishuman = ishuman
         self.name = name
+        self.policy = None
 
     def to_dict(self):
         return {"name": self.name, "color": self.color, "ishuman": self.ishuman, "territories": [], "reinforcements": 0, "cards": []}
