@@ -12,6 +12,7 @@ class TriNet(nn.Module):
     extent possible). The network is trained using the PPO algorithm from the stable_baselines3 library.
     """
     def __init__(self, env, model_path=None):
+        super(TriNet, self).__init__()
         self.env = DummyVecEnv([lambda: env])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.agent = PPO("MultiInputPolicy", self.env, verbose=1)
@@ -29,18 +30,19 @@ class TriNet(nn.Module):
         return self.agent.predict(obs)
     
     def get_action(self, obs):
-        if self.random:
-            return self.env.action_space.sample()
-
-        action, _ = self.predict(obs)
-        T = obs["owners"].shape[0]
-
+        if self.random: 
+            return self.env.action_space.sample() 
+        action, _ = self.predict(obs) 
+        T = obs["owners"].shape[0] 
+        # reinforce = action['reinforce'] 
+        # attack_units = action['attack_units'] 
+        # fortify_units = action['fortify_units']
         reinforce = action[:T]
-        attack = np.stack([action[T:2*T], action[2*T:3*T]], axis=1)
-        fortify = np.stack([action[3*T:3*T+2], action[3*T+2:3*T+3]], axis=1)
+        attack_units = (action[T:T + T * T].reshape((T, T)) * (T + 1)).astype(np.int32)
+        fortify_units = (action[T + T * T:].reshape((T, T)) * (T + 1)).astype(np.int32) 
+        # return { 'reinforce': reinforce, 'attack_units': attack_units, 'fortify_units': fortify_units }
+        return np.concatenate((reinforce, attack_units.flatten(), fortify_units.flatten()))
 
-        return reinforce, attack, fortify
-    
     def save_model(self, path):
         if self.random:
             return

@@ -10,14 +10,14 @@ class RiskEnvWrapper(gym.Env):
         super(RiskEnvWrapper, self).__init__()
         self.risk_env = risk_env
         self.T = risk_env.game_state.shape[0]
+        self.visualize = visualize
 
-        self.action_space = spaces.Dict({
-            'reinforce': spaces.Box(low=0, high=1, shape=(self.T,), dtype=np.float32),
-            'attack_units': spaces.Box(low=0, high=1, shape=(self.T,), dtype=np.float32),
-            'attack_dest': spaces.Box(low=0, high=self.T, shape=(self.T,), dtype=np.int32),
-            'fortify_src_dest': spaces.Box(low=0, high=self.T, shape=(2,), dtype=np.int32),
-            'fortify_units': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
-        })
+        # self.action_space = spaces.Dict({
+        #     'reinforce': spaces.Box(low=0, high=1, shape=(self.T,), dtype=np.float32),
+        #     'attack_units': spaces.Box(low=0, high=self.T, shape=(self.T,self.T), dtype=np.int32),
+        #     'fortify_units': spaces.Box(low=0, high=self.T, shape=(self.T,self.T), dtype=np.int32)
+        # })
+        self.action_space = spaces.Box( low=0, high=1, shape=(self.T + self.T * self.T + self.T * self.T,), dtype=np.float32 )
         self.observation_space = spaces.Dict({
             'owners': spaces.Box(low=0, high=len(self.risk_env.players), shape=(self.T,), dtype=np.int32),
             'units': spaces.Box(low=0, high=np.inf, shape=(self.T,), dtype=np.int32),
@@ -32,34 +32,35 @@ class RiskEnvWrapper(gym.Env):
         return self._get_obs(), {}
     
     def step(self, action):
-        reinforce_action = action['reinforce']
-        attack_units = action['attack_units']
-        attack_dest = action['attack_dest']
-        fortify_units = action['fortify_units']
-        fortify_src_dest = action['fortify_src_dest']
+        if self.visualize:
+            self.print_game_state()
+        # reinforce_action = action['reinforce']
+        # attack_units = action['attack_units']
+        # fortify_units = action['fortify_units']
+        reinforce_action = action[:self.T] 
+        attack_units = (action[self.T:self.T + self.T * self.T].reshape((self.T, self.T)) * (self.T + 1)).astype(np.int32)
+        fortify_units = (action[self.T + self.T * self.T:].reshape((self.T, self.T)) * (self.T + 1)).astype(np.int32)
 
         # Convert reinforce_action from distribution to number of units
-        reinforce_action = (reinforce_action / np.sum(reinforce_action) * self.risk_env.get_reinforcements(self.risk_env.current_player_id)).astype(np.int32)
-        
+        # print(self.risk_env.get_reinforcements(self.risk_env.current_player_id))
+        # print(reinforce_action)
         # Do the same for attack_units and fortify_units
-        attack_units_shape = attack_units.shape 
-        attack_indices = np.where(attack_units > 0) 
-        attack_units_flat = attack_units.flatten() 
-        attack_units = np.zeros_like(attack_units_flat, dtype=np.int32) 
-        if attack_indices[0].size > 0: 
-            attack_units[attack_indices] = np.minimum((attack_units_flat[attack_indices] * self.risk_env.game_state.flatten()[attack_indices]).astype(np.int32), self.risk_env.game_state.flatten()[attack_indices] - 1) 
-        attack_units = attack_units.reshape(attack_units_shape)
-        
-        if fortify_units > 0: 
-            fortify_units = np.minimum((fortify_units * self.risk_env.game_state[fortify_src_dest[0] - 1, 1]).astype(np.int32), self.risk_env.game_state[fortify_src_dest[0] - 1, 1] - 1) 
-        else: 
-            fortify_units = np.zeros_like(fortify_units, dtype=np.int32)
+            
+        # reinforce_action, attack_units, fortify_units = self.filter_actions(reinforce_action, attack_units, fortify_units)
+        reinforce_action, attack_units, fortify_units = self.filter_actions(reinforce_action, attack_units, fortify_units)
 
         self.risk_env.reinforce(self.risk_env.current_player_id, reinforce_action)
-        self.risk_env.winner = self.risk_env.attack(self.risk_env.current_player_id, np.array([attack_units, attack_dest]))
-        self.risk_env.fortify(self.risk_env.current_player_id, np.concatenate([fortify_units, fortify_src_dest]))
+        # self.print_game_state()
+        # print(attack_units)
+        self.risk_env.winner = self.risk_env.attack(self.risk_env.current_player_id, attack_units)
+        # print(fortify_units)
+        self.risk_env.fortify(self.risk_env.current_player_id, fortify_units)
+        
 
-        return self._get_obs(), self.risk_env.get_reward(), self.risk_env.is_game_over(), {}
+        # next player
+        self.risk_env.current_player_id = (self.risk_env.current_player_id + 1) % len(self.risk_env.players)
+
+        return self._get_obs(), self.calculate_reward(), self.risk_env.check_winner()[0], False, {}
     
     def _get_obs(self):
         return {
@@ -70,34 +71,85 @@ class RiskEnvWrapper(gym.Env):
             'fortify_paths': self.risk_env.get_fortify_paths(self.risk_env.current_player_id)
         }
     
-    def filter_fortify(self, fortify_action):
-        """
-        Replaces invalid fortify actions with valid ones
-        """
-        if self.risk_env.game_state[fortify_action[0],0] != self.risk_env.current_player_id:
-            return 
+    def filter_actions(self, reinforce_action, attack_units, fortify_units):
+        # cannot reinforce, attack, or fortify on rows that are not owned
+        reinforce_action = reinforce_action * (self.risk_env.game_state[:,0] == self.risk_env.current_player_id) 
+        reinforce_action = reinforce_action / np.sum(reinforce_action) 
+        reinforce_action = np.nan_to_num(reinforce_action) 
+        reinforce_action = (reinforce_action * (self.risk_env.get_reinforcements(self.risk_env.current_player_id) + 1)).astype(np.int32)
+        # also cannot attack or fortify from rows that have under 2 units
+        # also cannot attack TO columns that are owned, or fortify TO columns that aren't owned
+
+        # set all values >= 0
+        # reinforce_action = np.maximum(reinforce_action, 0)
+        # attack_units = np.maximum(attack_units, 0)
+        # fortify_units = np.maximum(fortify_units, 0)
+
+        # for i in range(self.T): 
+        #     for j in range(self.T): 
+        #         if self.risk_env.adjacencies[i,j] == 0 or self.risk_env.game_state[i,1] < 2: 
+        #             attack_units[i,j] = 0 
+        #             fortify_units[i,j] = 0 
+        #         elif self.risk_env.game_state[i,0] != self.risk_env.current_player_id: 
+        #             attack_units[i,j] = 0 
+        #             fortify_units[i,j] = 0
+        #         elif self.risk_env.game_state[j,0] == self.risk_env.current_player_id:
+        #             attack_units[i,j] = 0
+        #         if self.risk_env.game_state[j,0] != self.risk_env.current_player_id or not self.risk_env.is_link(self.risk_env.current_player_id, self.risk_env.adjacencies, i, j): 
+        #             fortify_units[i,j] = 0 
+        for i in range(self.T): 
+            for j in range(self.T): 
+                if self.risk_env.adjacencies[i, j] == 0 or self.risk_env.game_state[i, 1] < 2: 
+                    attack_units[i, j] = 0 
+                    fortify_units[i, j] = 0 
+                if self.risk_env.game_state[i, 0] != self.risk_env.current_player_id or self.risk_env.game_state[j, 0] == self.risk_env.current_player_id: 
+                    attack_units[i, j] = 0 
+                if self.risk_env.game_state[j, 0] != self.risk_env.current_player_id or not self.risk_env.is_link(self.risk_env.current_player_id, self.risk_env.adjacencies, i, j): 
+                    fortify_units[i, j] = 0 
+
+        # for i in range(self.T): 
+        #     attack_units[i] = np.minimum(attack_units[i], self.risk_env.game_state[i,1] - 1) 
+        #     if np.sum(attack_units[i]) > self.risk_env.game_state[i,1] - 1: 
+        #         attack_units[i] = (attack_units[i] / np.sum(attack_units[i]) * (self.risk_env.game_state[i,1] - 1)).astype(np.int32) 
+        #         fortify_units[i] = np.minimum(fortify_units[i], self.risk_env.game_state[i,1] - 1) 
+        #         if np.sum(fortify_units[i]) > self.risk_env.game_state[i,1] - 1: 
+        #             fortify_units[i] = (fortify_units[i] / np.sum(fortify_units[i]) * (self.risk_env.game_state[i,1] - 1)).astype(np.int32) 
+        for i in range(self.T): 
+            attack_units[i] = np.minimum(attack_units[i], self.risk_env.game_state[i, 1] - 1) 
+            if np.sum(attack_units[i]) > self.risk_env.game_state[i, 1] - 1: 
+                attack_units[i] = (attack_units[i] / np.sum(attack_units[i]) * (self.risk_env.game_state[i, 1] - 1)).astype(np.int32) 
+            fortify_units[i] = np.minimum(fortify_units[i], self.risk_env.game_state[i, 1] - 1) 
+            if np.sum(fortify_units[i]) > self.risk_env.game_state[i, 1] - 1: 
+                fortify_units[i] = (fortify_units[i] / np.sum(fortify_units[i]) * (self.risk_env.game_state[i, 1] - 1)).astype(np.int32)
         
+        return reinforce_action, attack_units, fortify_units
+    
     def calculate_reward(self):
         current_player_id = self.risk_env.current_player_id
-        reward = np.sum(self.risk_env.game_state[self.risk_env.game_state[:,0] == current_player_id, 1])
+        reward = np.sum(self.risk_env.game_state[:,0] == current_player_id)
         if self.risk_env.winner:
             reward += 1000
         return reward
 
     def print_game_state(self):
-        print(self.risk_env.game_state)
-        print(self.risk_env.adjacencies)
-        print(self.risk_env.get_fortify_paths(self.risk_env.current_player_id))
+        print("Current player: ", self.risk_env.current_player_id)
+        for i in range(self.T):
+            print(f"Territory {i}: Owner {self.risk_env.game_state[i,0]}, Units {self.risk_env.game_state[i,1]}", end=" | ")
+            if (i + 1) % 5 == 0:  # Adjust the number 5 to change the grid width
+                print()
+        print()
+        # print('adjacencies: ', self.risk_env.adjacencies)
+        # print(self.risk_env.get_fortify_paths(self.risk_env.current_player_id))
 
 if __name__ == "__main__":
     from risk_env import RiskEnv, Player
-    risk_env = RiskEnv("two.json",[Player(0), Player(1)])
-    env = RiskEnvWrapper(risk_env)
+    risk_env = RiskEnv("small.json",[Player(0), Player(1)])
+    env = RiskEnvWrapper(risk_env, visualize=True)
     env.reset()
     done = False
     while not done:
         action = env.action_space.sample()
         obs, reward, done, _, _ = env.step(action)
         print(reward)
-        time.sleep(0.1)
+        time.sleep(0.5)
     print(obs)

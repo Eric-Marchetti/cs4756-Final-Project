@@ -1,12 +1,12 @@
-from risk_env import RiskEnv, Player, RiskEnvWrapper
+from risk_env import RiskEnv, Player
+from risk_env_wrapper import RiskEnvWrapper
 from trinet import TriNet
 import json
 import argparse
 
 def main(args):
-    players = [Player(player["name"], player["model_path"]) for player in json.load(open(args.players))["players"]]
-    board = json.load(open(args.board))
-    risk_env = RiskEnv(board, players)
+    players = [Player(i) for i in range(2)]
+    risk_env = RiskEnv(args.board, players)
     env = RiskEnvWrapper(risk_env)
     # Initialize and train TriNet
     if args.load:
