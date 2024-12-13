@@ -83,6 +83,7 @@ class RiskEnv():
         self.game_state = np.array(game_state_from_board(board))
         self.start_player_id = self.init_game_state()
         self.territories, self.adjacencies, self.continents = parse_board_layout(board)
+        self.positions = self._extract_positions(board, self.territories)
         self.winner = None
         self.turn = 0
         self.current_player_id = self.start_player_id
@@ -102,6 +103,15 @@ class RiskEnv():
             last_player_id = i % num_players
 
         return (last_player_id + 1) % num_players 
+    
+    def _extract_positions(self, board_data, territories):
+        positions = {}
+        # territories is {territory_name: index}
+        for t_name, t_index in territories.items():
+            # Each territory in the JSON has a "position" field: [x, y]
+            pos = board_data["Territories"][t_name]["position"]
+            positions[t_index] = (pos[0], pos[1])
+        return positions
 
     def reset(self):
         """
@@ -222,8 +232,8 @@ class RiskEnv():
                 # print("Player ", player_id, " attacking from ", index[0], " to ", index[1])
                 # print("with ", attack_units, " units")
                 # print(self.game_state[index[1]])
-                return
-                # raise ValueError("Cannot attack a territory you own")
+                #return
+                raise ValueError("Cannot attack a territory you own")
             # check if the player is attacking an adjacent territory
             if self.adjacencies[index[0], index[1]] == 0:
                 raise ValueError("Cannot attack a non-adjacent territory")

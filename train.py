@@ -1,5 +1,6 @@
 from risk_env import RiskEnv, Player
 from risk_env_wrapper import RiskEnvWrapper
+from stable_baselines3.common.vec_env import VecNormalize
 from trinet import TriNet
 import json
 import argparse
@@ -8,17 +9,19 @@ def main(args):
     players = [Player(i) for i in range(2)]
     risk_env = RiskEnv(args.board, players)
     env = RiskEnvWrapper(risk_env)
+
     # Initialize and train TriNet
     if args.load:
-        trinet = TriNet(env, model_path=args.load, visualize=False)
+        trinet = TriNet(env, model_path=args.load)
     else:
         trinet = TriNet(env,model_path="models/trinet")
     
     trinet.train(100000)
+    trinet.save_model("models/trinet_attack_motivated")
     import matplotlib.pyplot as plt
 
     # Assuming trinet.train() returns a list of training losses
-    losses = trinet.train(100000)
+    losses = trinet.train(20000)
 
     # Plot the training loss over time
     plt.plot(losses)
@@ -26,7 +29,7 @@ def main(args):
     plt.ylabel('Loss')
     plt.title('Training Loss Over Time')
     plt.show()
-    trinet.save_model("models/trinet")
+    
 
 if __name__ == "__main__": # Initialize environment and players 
     parser = argparse.ArgumentParser()

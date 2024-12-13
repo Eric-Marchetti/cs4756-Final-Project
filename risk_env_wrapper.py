@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import time
 
 class RiskEnvWrapper(gym.Env): 
-    def __init__(self, risk_env, visualize=False, max_episode_steps = 200): 
+    def __init__(self, risk_env, visualize=False, max_episode_steps = 50): 
         super(RiskEnvWrapper, self).__init__()
         self.risk_env = risk_env
         self.T = risk_env.game_state.shape[0]
@@ -22,8 +22,8 @@ class RiskEnvWrapper(gym.Env):
         self.action_space = spaces.Box( low=0, high=1, shape=(self.T + self.T * self.T + self.T * self.T,), dtype=np.float32 )
         self.observation_space = spaces.Dict({
             'owners': spaces.Box(low=0, high=len(self.risk_env.players), shape=(self.T,), dtype=np.int32),
-            'units': spaces.Box(low=0, high=np.inf, shape=(self.T,), dtype=np.int32),
-            'reinforcement_max': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.int32),
+            'units': spaces.Box(low=0, high=100, shape=(self.T,), dtype=np.int32),
+            'reinforcement_max': spaces.Box(low=0, high=50, shape=(1,), dtype=np.int32),
             'adjacencies': spaces.Box(low=0, high=1, shape=(self.T,self.T), dtype=np.int32),
             'fortify_paths': spaces.Box(low=0, high=np.inf, shape=(self.T,self.T), dtype=np.int32)
         })
@@ -35,6 +35,7 @@ class RiskEnvWrapper(gym.Env):
         return self._get_obs(), {}
     
     def step(self, action):
+        num_initial_territories = np.sum(self.risk_env.game_state[:,0] == self.risk_env.current_player_id)
         if self.visualize:
             self.print_game_state()
         # reinforce_action = action['reinforce']
@@ -68,7 +69,9 @@ class RiskEnvWrapper(gym.Env):
         if not done and self.current_step >= self.max_episode_steps:
             done = True
 
-        return self._get_obs(), self.calculate_reward(), done, False, {}
+        num_final_territories = np.sum(self.risk_env.game_state[:,0] == self.risk_env.current_player_id)
+        took_territory = num_final_territories > num_initial_territories
+        return self._get_obs(), self.calculate_reward(took_territory), done, False, {}
     
     def _get_obs(self):
         obs = {
@@ -80,10 +83,20 @@ class RiskEnvWrapper(gym.Env):
         }
 
         # Example normalization: Assume max_units = 50 as a heuristic
-        max_units = 50.0
+        max_units = 100
         obs['units'] = np.clip(obs['units'], 0, max_units) / max_units
         # Similarly, normalize reinforcement_max by some scale, say max 20
-        obs['reinforcement_max'] = np.clip(obs['reinforcement_max'], 0, 20) / 20.0
+        obs['reinforcement_max'] = np.clip(obs['reinforcement_max'], 0, 50) / 50.0
+
+        if obs['reinforcement_max'].shape == ():  # zero-dim scalar
+            obs['reinforcement_max'] = np.array([obs['reinforcement_max']], dtype=np.float32)
+
+        # Do similar checks for 'owners', 'units', etc., ensuring they match the declared shapes.
+        # 'owners' and 'units' should be arrays, not scalars. If they are single values, wrap them:
+        if len(obs['owners'].shape) == 0:
+            obs['owners'] = np.array([obs['owners']], dtype=np.int32)
+        if len(obs['units'].shape) == 0:
+            obs['units'] = np.array([obs['units']], dtype=np.float32)
 
         return obs
     
@@ -150,11 +163,16 @@ class RiskEnvWrapper(gym.Env):
                 if total > 0:
                     fortify_units[i] = (fortify_units[i] / total * max_units_available).astype(np.int32)
 
+        #print('attack_units: ', sum(attack_units))
         return reinforce_action, attack_units, fortify_units
     
-    def calculate_reward(self):
+    def calculate_reward(self, took_territory):
         current_player_id = self.risk_env.current_player_id
         reward = np.sum(self.risk_env.game_state[:,0] == current_player_id) / self.T
+        if took_territory:
+            reward += 0.1
+        else:
+            reward -= 0.5
         if self.risk_env.winner:
             reward += 1.0
         return reward

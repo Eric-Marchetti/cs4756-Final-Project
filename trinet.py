@@ -4,6 +4,7 @@ import numpy as np
 import torch.nn as nn
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import VecNormalize
 class TriNet(nn.Module):
     """
     A neural network model that uses the PPO algorithm to learn reinforcement attack and fortify strategies for the game of Risk.
@@ -16,9 +17,11 @@ class TriNet(nn.Module):
         self.env = DummyVecEnv([lambda: env])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        learning_rate = 0.00001 
-        clip_range = 0.1 
-        entropy_coef = 0.01
+        self.env = VecNormalize(self.env, norm_obs=True, norm_reward=True, clip_obs=10.0)
+
+        learning_rate = 5e-6#0.00001 
+        clip_range = 0.2
+        entropy_coef = 0.001
         
         self.agent = PPO("MultiInputPolicy", self.env, verbose=1, learning_rate=learning_rate, clip_range=clip_range, ent_coef=entropy_coef)
         self.agent.policy.to(self.device)
